@@ -17,17 +17,24 @@ variable "do_token" {}
 variable "do_region" {
     default = "nyc3"
 }
+
+variable "domain_name" {}
+
 variable "ssh_fingerprint" {}
 variable "ssh_private_key" {
     default = "~/.ssh/id_rsa"
 }
 
+variable "number_of_masters" {
+	default = "1"
+}
+
 variable "number_of_workers" {
-	default = "3"
+	default = "2"
 }
 
 variable "k8s_version" {
-	default = "v1.10.3"
+	default = "v1.13.3"
 }
 
 variable "cni_version" {
@@ -43,7 +50,7 @@ variable "size_master" {
 }
 
 variable "size_worker" {
-    default = "2gb"
+    default = "1gb"
 }
 
 
@@ -68,7 +75,7 @@ provider "digitalocean" {
 
 resource "digitalocean_droplet" "k8s_master" {
     image = "coreos-stable"
-    name = "${var.prefix}k8s-master"
+    name = "master.${var.domain_name}"
     region = "${var.do_region}"
     private_networking = true
     size = "${var.size_master}"
@@ -99,6 +106,7 @@ resource "digitalocean_droplet" "k8s_master" {
         inline = [
             "export K8S_VERSION=\"${var.k8s_version}\"",
             "export CNI_VERSION=\"${var.cni_version}\"",
+						"export DOMAIN_NAME=\"${var.domain_name}\"",
             "chmod +x /tmp/install-kubeadm.sh",
             "sudo -E /tmp/install-kubeadm.sh",
             "export MASTER_PRIVATE_IP=\"${self.ipv4_address_private}\"",
@@ -133,7 +141,7 @@ EOF
 resource "digitalocean_droplet" "k8s_worker" {
     count = "${var.number_of_workers}"
     image = "coreos-stable"
-    name = "${var.prefix}${format("k8s-worker-%02d", count.index + 1)}"
+    name = "${var.prefix}${format("worker-%02d", count.index + 1)}.${var.domain_name}"
     region = "${var.do_region}"
     size = "${var.size_worker}"
     private_networking = true
@@ -202,7 +210,23 @@ EOF
 
 # use kubeconfig retrieved from master
 
-resource "null_resource" "deploy_digitalocean_cloud_controller_manager" {
+resource "digitalocean_record" "api_record" {
+    name = "api"
+    type = "A"
+    ttl = "3600"
+    value = "${digitalocean_droplet.k8s_master.ipv4_address}"
+    domain = "${var.domain_name}"
+}
+
+resource "digitalocean_record" "master_record" {
+    name = "master"
+    type = "A"
+    ttl = "3600"
+    value = "${digitalocean_droplet.k8s_master.ipv4_address}"
+    domain = "${var.domain_name}"
+}
+
+resource "null_resource" "do_secret" {
     depends_on = ["digitalocean_droplet.k8s_worker"]
     provisioner "local-exec" {
         command = <<EOF
@@ -210,7 +234,29 @@ resource "null_resource" "deploy_digitalocean_cloud_controller_manager" {
             sed -e "s/\$DO_ACCESS_TOKEN/${var.do_token}/" < ${path.module}/03-do-secret.yaml > ./secrets/03-do-secret.rendered.yaml
             until kubectl get pods 2>/dev/null; do printf '.'; sleep 5; done
             kubectl create -f ./secrets/03-do-secret.rendered.yaml
-            kubectl create -f https://raw.githubusercontent.com/digitalocean/digitalocean-cloud-controller-manager/master/releases/v0.1.3.yml
+EOF
+    }
+}
+
+resource "null_resource" "cloud_controller_manager" {
+    depends_on = ["digitalocean_droplet.k8s_worker"]
+    provisioner "local-exec" {
+        command = <<EOF
+            export KUBECONFIG=${path.module}/secrets/admin.conf
+            until kubectl get pods 2>/dev/null; do printf '.'; sleep 5; done
+            kubectl apply -f https://raw.githubusercontent.com/digitalocean/digitalocean-cloud-controller-manager/master/releases/v0.1.8.yml
+EOF
+    }
+}
+
+resource "null_resource" "external-dns" {
+    depends_on = ["digitalocean_droplet.k8s_worker"]
+    provisioner "local-exec" {
+        command = <<EOF
+            export KUBECONFIG=${path.module}/secrets/admin.conf
+            sed -e "s/\$DOMAIN_NAME/${var.domain_name}/" < ${path.module}/04-external-dns.yaml > ./secrets/04-external-dns.rendered.yaml
+            kubectl create namespace external-dns
+            kubectl create -f ./secrets/04-external-dns.rendered.yaml
 EOF
     }
 }
