@@ -210,16 +210,16 @@ EOF
 
 # use kubeconfig retrieved from master
 
-resource "digitalocean_record" "api_record" {
-    name = "api"
-    type = "A"
-    ttl = "3600"
-    value = "${digitalocean_droplet.k8s_master.ipv4_address}"
+resource "digitalocean_record" "wildcard_record" {
+    name = "*"
+    type = "CNAME"
+    ttl = "43200"
+    value = "${var.domain_name}."
     domain = "${var.domain_name}"
 }
 
 resource "digitalocean_record" "master_record" {
-    name = "master"
+    name = "@"
     type = "A"
     ttl = "3600"
     value = "${digitalocean_droplet.k8s_master.ipv4_address}"
@@ -238,25 +238,24 @@ EOF
     }
 }
 
-resource "null_resource" "cloud_controller_manager" {
+resource "null_resource" "git_deploy_key" {
     depends_on = ["digitalocean_droplet.k8s_worker"]
     provisioner "local-exec" {
         command = <<EOF
             export KUBECONFIG=${path.module}/secrets/admin.conf
             until kubectl get pods 2>/dev/null; do printf '.'; sleep 5; done
-            kubectl apply -f https://raw.githubusercontent.com/digitalocean/digitalocean-cloud-controller-manager/master/releases/v0.1.8.yml
+            kubectl create secret generic flux-git-deploy --from-file=identity=/home/tgeorge/.ssh/flux_deploy
 EOF
     }
 }
 
-resource "null_resource" "external-dns" {
+resource "null_resource" "install_flux" {
     depends_on = ["digitalocean_droplet.k8s_worker"]
     provisioner "local-exec" {
         command = <<EOF
             export KUBECONFIG=${path.module}/secrets/admin.conf
-            sed -e "s/\$DOMAIN_NAME/${var.domain_name}/" < ${path.module}/04-external-dns.yaml > ./secrets/04-external-dns.rendered.yaml
-            kubectl create namespace external-dns
-            kubectl create -f ./secrets/04-external-dns.rendered.yaml
+            until kubectl get pods 2>/dev/null; do printf '.'; sleep 5; done
+            kubectl apply -f deploy
 EOF
     }
 }
