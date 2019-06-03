@@ -20,10 +20,13 @@ variable "do_region" {
 
 variable "domain_name" {}
 
+
 variable "ssh_fingerprint" {}
 variable "ssh_private_key" {
     default = "~/.ssh/id_rsa"
 }
+
+variable "path_to_flux_deploy_private_key" {}
 
 variable "number_of_masters" {
 	default = "1"
@@ -34,7 +37,7 @@ variable "number_of_workers" {
 }
 
 variable "k8s_version" {
-	default = "v1.13.3"
+	default = "v1.14.0"
 }
 
 variable "cni_version" {
@@ -52,6 +55,8 @@ variable "size_master" {
 variable "size_worker" {
     default = "1gb"
 }
+
+variable "deploy_flux" {}
 
 
 ###############################################################################
@@ -238,24 +243,36 @@ EOF
     }
 }
 
+resource "null_resource" "deploy_istio_crds" {
+    depends_on = ["digitalocean_droplet.k8s_worker"]
+    provisioner "local-exec" {
+        command = <<EOF
+            export KUBECONFIG=${path.module}/secrets/admin.conf
+            until kubectl get pods 2>/dev/null; do printf '.'; sleep 5; done
+            kubectl apply -f deploy/istio/
+EOF
+    }
+}
+
 resource "null_resource" "git_deploy_key" {
     depends_on = ["digitalocean_droplet.k8s_worker"]
     provisioner "local-exec" {
         command = <<EOF
             export KUBECONFIG=${path.module}/secrets/admin.conf
             until kubectl get pods 2>/dev/null; do printf '.'; sleep 5; done
-            kubectl create secret generic flux-git-deploy --from-file=identity=/home/tgeorge/.ssh/flux_deploy
+            kubectl create secret generic flux-git-deploy --from-file=identity=${var.path_to_flux_deploy_private_key}
 EOF
     }
 }
 
 resource "null_resource" "install_flux" {
     depends_on = ["digitalocean_droplet.k8s_worker"]
+    count = "${var.deploy_flux}"
     provisioner "local-exec" {
         command = <<EOF
             export KUBECONFIG=${path.module}/secrets/admin.conf
             until kubectl get pods 2>/dev/null; do printf '.'; sleep 5; done
-            kubectl apply -f deploy
+            kubectl apply -f deploy/flux
 EOF
     }
 }
