@@ -37,11 +37,11 @@ variable "number_of_workers" {
 }
 
 variable "k8s_version" {
-	default = "v1.14.0"
+	default = "v1.15.2"
 }
 
 variable "cni_version" {
-	default = "v0.6.0"
+	default = "v0.7.1"
 }
 
 variable "prefix" {
@@ -203,14 +203,14 @@ resource "digitalocean_droplet" "k8s_worker" {
         }
     }
 
-    provisioner "local-exec" {
-        when = "destroy"
-        command = <<EOF
-export KUBECONFIG=${path.module}/secrets/admin.conf
-kubectl drain --delete-local-data --force --ignore-daemonsets ${self.name}
-kubectl delete nodes/${self.name}
-EOF
-    }
+    /* provisioner "local-exec" { */
+    /*     when = "destroy" */
+    /*     command = <<EOF */
+/* export KUBECONFIG=${path.module}/secrets/admin.conf */
+/* kubectl drain --delete-local-data --force --ignore-daemonsets ${self.name} */
+/* kubectl delete nodes/${self.name} */
+/* EOF */
+    /* } */
 }
 
 # use kubeconfig retrieved from master

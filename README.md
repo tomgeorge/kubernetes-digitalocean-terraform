@@ -41,6 +41,18 @@ eval `ssh-agent -s`
 ssh-add ~/.ssh/id_rsa
 ```
 
+## Set vars
+
+The script accepts the following vars
+
++ `do_token` - Your digitalocean API token
++ `do_region` - the region to deploy to.  Defaults to `nyc3`.
++ `domain_name` - The domain name to use to create DNS records
++ `ssh_fingerprint` - The fingerprint of your SSH key that you will use to provision and access the droplets
++ `number_of_masters` - The number of masters to deploy.  Defaults to 1.
++ `number_of_workers` - The number of workers to deploy.  Defaults to 2.
++ `k8s_version` - The version of kubernetes to deploy.  Defaults to v1.14.0
+
 ## Invoke Terraform
 
 We put our DigitalOcean token in the file `./secrets/DO_TOKEN` (this directory is mentioned in `.gitignore`, of course, so we don't leak it)
